@@ -1,12 +1,12 @@
-// Importing modules
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const axios = require("axios");
 const sha256 = require("sha256");
 const uniqid = require("uniqid");
+const path = require("path");
 
-// Creating express application
+
 const app = express();
 
 // UAT environment
@@ -14,9 +14,9 @@ const MERCHANT_ID = "PGTESTPAYUAT86";
 const PHONE_PE_HOST_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox";
 const SALT_INDEX = 1;
 const SALT_KEY = "96434309-7796-489d-8924-ab56988a6076";
-const APP_BE_URL = "http://localhost:3002"; // Our application
+const APP_BE_URL = "https://beta.instacollabs.com/payment"; 
 
-// Setting up middleware
+
 app.use(cors());
 app.use(bodyParser.json());
 app.use(
@@ -25,11 +25,32 @@ app.use(
   })
 );
 
+app.use((req, res, next) => {
+  const host = req.headers.host;
+  const subdomain = host.split('.')[0];
+  req.subdomain = subdomain;
+  next();
+});
+
+
+
+app.use(express.static(path.join(__dirname, 'public')));
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
+
+
+
+app.get('/payment' , (req , res) =>{
+  res.render('index');
+} )
+
+
 // Endpoint to initiate a payment
 app.get("/pay", async function (req, res, next) {
-  const amount = +req.query.amount;
+  const amount = 10;
   const userId = "MUID123";
-  const merchantTransactionId = "Anuj123";
+  const merchantTransactionId = uniqid();  // Generating a unique transaction ID
 
   const normalPayLoad = {
     merchantId: MERCHANT_ID,
@@ -37,7 +58,7 @@ app.get("/pay", async function (req, res, next) {
     merchantUserId: userId,
     amount: amount * 100,
     redirectUrl: `${APP_BE_URL}/payment/validate/${merchantTransactionId}`,
-    redirectMode: "REDIRECT",
+    redirectMode: "IFRAME",  
     callbackUrl: APP_BE_URL,
     mobileNumber: "9999999999",
     paymentInstrument: {
@@ -52,8 +73,8 @@ app.get("/pay", async function (req, res, next) {
   const sha256_val = sha256(string);
   const xVerifyChecksum = sha256_val + "###" + SALT_INDEX;
 
-  axios
-    .post(
+  try {
+    const response = await axios.post(
       `${PHONE_PE_HOST_URL}/pg/v1/pay`,
       { request: base64EncodedPayload },
       {
@@ -63,15 +84,18 @@ app.get("/pay", async function (req, res, next) {
           accept: "application/json",
         },
       }
-    )
-    .then(function (response) {
-      console.log("response->", JSON.stringify(response.data));
-      res.redirect(response.data.data.instrumentResponse.redirectInfo.url);
-    })
-    .catch(function (error) {
-      res.send(error);
-    });
+    );
+
+    if (response.data.success) {
+      res.json({ url: response.data.data.instrumentResponse.redirectInfo.url });
+    } else {
+      res.status(500).json({ error: response.data.message });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
+
 
 // Endpoint to check the status of payment
 app.get("/payment/validate/:merchantTransactionId", async function (req, res) {
@@ -83,29 +107,24 @@ app.get("/payment/validate/:merchantTransactionId", async function (req, res) {
     let sha256_val = sha256(string);
     let xVerifyChecksum = sha256_val + "###" + SALT_INDEX;
 
-    axios
-      .get(statusUrl, {
+    try {
+      const response = await axios.get(statusUrl, {
         headers: {
           "Content-Type": "application/json",
           "X-VERIFY": xVerifyChecksum,
           "X-MERCHANT-ID": MERCHANT_ID,
           accept: "application/json",
         },
-      })
-      .then(function (response) {
-        console.log("response->", response.data);
-        if (response.data && response.data.code === "PAYMENT_SUCCESS") {
-          // Redirect to FE payment success status page
-          res.send(response.data);
-        } else {
-          // Redirect to FE payment failure / pending status page
-          res.send(response.data);
-        }
-      })
-      .catch(function (error) {
-        // Redirect to FE payment failure / pending status page
-        res.send(error);
       });
+
+      if (response.data && response.data.code === "PAYMENT_SUCCESS") {
+        res.send(response.data);
+      } else {
+        res.send(response.data);
+      }
+    } catch (error) {
+      res.send(error);
+    }
   } else {
     res.send("Sorry!! Error");
   }
@@ -114,10 +133,9 @@ app.get("/payment/validate/:merchantTransactionId", async function (req, res) {
 // Endpoint to initiate a refund
 app.post("/refund", async function (req, res) {
   const { originalTransactionId, refundAmount, callbackUrl } = req.body;
-  const userId = "User123"; // Replace with actual userId if needed
-  const merchantTransactionId = "Anuj123"; // Generate a unique transaction ID for the refund
+  const userId = "User123";
+  const merchantTransactionId = "Anuj123";
 
-  // Create the payload for the refund request
   const refundPayload = {
     merchantId: MERCHANT_ID,
     merchantUserId: userId,
@@ -134,8 +152,8 @@ app.post("/refund", async function (req, res) {
   const sha256_val = sha256(string);
   const xVerifyChecksum = sha256_val + "###" + SALT_INDEX;
 
-  axios
-    .post(
+  try {
+    const response = await axios.post(
       `https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/refund`,
       { request: base64EncodedPayload },
       {
@@ -145,30 +163,16 @@ app.post("/refund", async function (req, res) {
           accept: "application/json",
         },
       }
-    )
-    .then(function (response) {
-      console.log("Refund response->", response.data);
-      res.send(response.data);
-    })
-    .catch(function (error) {
-      console.error("Refund error->", error);
-      res.status(500).send(error);
-    });
+    );
+
+    res.send(response.data);
+  } catch (error) {
+    res.status(500).send(error);
+  }
 });
 
-// Example request payload for initiating a refund
-// {
-//   "originalTransactionId": "OD620471739210623",
-//   "refundAmount": 1000,
-//   "callbackUrl": "https://webhook.site/callback-url"
-// }
 
-app.get("/", (req, res) => {
-  res.send("PhonePe Integration APIs!");
-});
-
-// Starting the server
-const port = 3002;
+const port = 3000;
 app.listen(port, () => {
   console.log(`PhonePe application listening on port ${port}`);
 });

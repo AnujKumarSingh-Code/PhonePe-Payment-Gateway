@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhonePe Payment</title>
+  <script src="https://mercury.phonepe.com/web/bundle/checkout.js"></script>
+</head>
+<body>
+  <button id="payBtn">Pay Now</button>
+
+  <script>
+    document.getElementById('payBtn').addEventListener('click', async function () {
+      // Fetch the payment URL from your backend
+      const response = await fetch('/pay');
+      const data = await response.json();
+
+      
+
+      if (data.url) {
+        // Invoke the payment page in IFrame mode
+        window.PhonePeCheckout.transact({
+          tokenUrl: data.url,
+          type: "IFRAME",
+          callback: function(response) {
+            if (response === 'USER_CANCEL') {
+              // Handle payment cancellation
+              alert('Payment was cancelled by the user.');
+            } else if (response === 'CONCLUDED') {
+              // Handle payment completion
+              alert('Payment completed successfully.');
+            }
+          }
+        });
+      } else {
+        alert('Failed to initiate payment.');
+      }
+    });
+  </script>
+</body>
+</html>
